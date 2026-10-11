@@ -1,0 +1,20 @@
+# API
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+
+# Database
+sqlalchemy[asyncio]==2.1.4
+alembic==1.20.0
+psycopg[binary]==3.3.6
+
+# Local LLM
+ollama==0.6.3
+
+# Voice
+pyttsx3==2.99
+faster-whisper==1.2.1
+
+# Configuration and validation
+pydantic==2.14.0
+python-dotenv==1.2.4
