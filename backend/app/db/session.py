@@ -1,38 +1,23 @@
-import asyncio
-import sys
-import warnings
-from collections.abc import AsyncGenerator
+from collections.abc import Generator
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Config
 
 from .base import Base
 
-__all__ = ["Base", "engine", "AsyncSessionLocal", "get_db"]
+__all__ = ["Base", "engine", "SessionLocal", "get_db"]
 
-# psycopg async requires a selector loop on Windows (default Proactor is
-# incompatible). Deprecated in 3.14, removal slated 3.16 — revisit then
-# (likely switch to sync engine or run Postgres access in threads).
-if sys.platform == "win32":
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        try:
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-        except AttributeError:
-            pass
+# Sync psycopg3 engine. (An async engine was tried first, but Uvicorn forces
+# the Proactor event loop on Windows after app import, and psycopg async
+# cannot run on Proactor — so every DB call failed at runtime. Sync is
+# correct for a local-first service with millisecond queries.)
+engine = create_engine(Config.DATABASE_URL, echo=Config.DEBUG, future=True)
 
-# Single source of truth: repo-root .env via Config (psycopg3 scheme works
-# with create_async_engine). No hardcoded secrets here.
-engine = create_async_engine(Config.DATABASE_URL, echo=Config.DEBUG, future=True)
-
-AsyncSessionLocal = async_sessionmaker(
-    bind=engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+SessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with AsyncSessionLocal() as session:
+def get_db() -> Generator[Session, None, None]:
+    with SessionLocal() as session:
         yield session

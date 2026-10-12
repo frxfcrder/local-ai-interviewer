@@ -1,10 +1,9 @@
 import json
 import httpx
 from typing import AsyncGenerator, List, Dict, Any
-from app.core.config import settings  # Assuming you have base configs set up
 
 class LLMService:
-    def __init__(self, base_url: str = "http://localhost:11434", model_name: str = "llama3"):
+    def __init__(self, base_url: str = "http://localhost:11434", model_name: str = "llama3.2"):
         self.base_url = base_url
         self.model_name = model_name
 
