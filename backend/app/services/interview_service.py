@@ -9,6 +9,10 @@ from app.models.message import Message
 
 ALLOWED_SENDERS = ("candidate", "interviewer")
 
+#: Role used until the candidate states a target (greeting asks for it,
+#: first answer is extracted into a real title).
+DEFAULT_ROLE = "General"
+
 
 class InterviewService:
     """Persistence-backed interview sessions (sync SQLAlchemy)."""
@@ -16,7 +20,7 @@ class InterviewService:
     def __init__(self, db: Session):
         self.db = db
 
-    def create_session(self, *, user_id: uuid.UUID, role_type: str) -> Interview:
+    def create_session(self, *, user_id: uuid.UUID, role_type: str = DEFAULT_ROLE) -> Interview:
         session = Interview(user_id=user_id, role_type=role_type, status="in_progress")
         self.db.add(session)
         self.db.commit()
@@ -60,6 +64,15 @@ class InterviewService:
         if session is None:
             return None
         session.status = "completed"
+        self.db.commit()
+        self.db.refresh(session)
+        return session
+
+    def set_role(self, interview_id: uuid.UUID, role_type: str) -> Interview | None:
+        session = self.get_session(interview_id)
+        if session is None:
+            return None
+        session.role_type = role_type.strip()[:100]
         self.db.commit()
         self.db.refresh(session)
         return session

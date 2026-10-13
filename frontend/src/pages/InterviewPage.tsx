@@ -7,6 +7,7 @@ export default function InterviewPage(): React.JSX.Element {
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [session, setSession] = useState<InterviewSession | null>(null);
+  const [roleInput, setRoleInput] = useState('');
   const [messages, setMessages] = useState<SessionMessage[]>([]);
   const [greeting, setGreeting] = useState<{ text: string; audio_url: string } | null>(null);
   const [report, setReport] = useState<string | null>(null);
@@ -30,7 +31,7 @@ export default function InterviewPage(): React.JSX.Element {
   async function newSession(): Promise<void> {
     setBusy(true);
     try {
-      const created = await createSession('Senior Backend Engineer');
+      const created = await createSession(roleInput.trim() || undefined);
       setSession(created);
       setMessages([]);
       setGreeting(null);
@@ -90,9 +91,27 @@ export default function InterviewPage(): React.JSX.Element {
             </button>
           </p>
         ) : (
-          <button type="button" onClick={newSession} disabled={busy}>
-            New session
-          </button>
+          <div>
+            <label>
+              Role (leave blank and the interviewer will ask you):{' '}
+              <input
+                type="text"
+                value={roleInput}
+                onChange={(e) => setRoleInput(e.target.value)}
+                placeholder="e.g. Data Scientist"
+                list="role-suggestions"
+              />
+            </label>
+            <datalist id="role-suggestions">
+              <option value="Senior Backend Engineer" />
+              <option value="Frontend Engineer" />
+              <option value="Data Scientist" />
+              <option value="DevOps Engineer" />
+            </datalist>{' '}
+            <button type="button" onClick={newSession} disabled={busy}>
+              New session
+            </button>
+          </div>
         )}
       </section>
       {session && (

@@ -1,5 +1,6 @@
 import uuid
 
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.db.session import SessionLocal
@@ -62,8 +63,6 @@ def test_session_endpoints_registered():
 
 
 def test_session_endpoints_live():
-    from fastapi.testclient import TestClient
-
     with TestClient(app) as client:
         created = client.post(
             "/api/interview/sessions",
@@ -102,7 +101,6 @@ def test_session_endpoints_live():
 
 
 def test_greet_persists_and_returns_audio():
-    from fastapi.testclient import TestClient
 
     with TestClient(app) as client:
         created = client.post(
@@ -132,3 +130,87 @@ def test_greet_persists_and_returns_audio():
             client.delete(body["audio_url"])
         finally:
             _cleanup(uuid.UUID(session_id))
+
+
+def test_greet_asks_for_role_when_general():
+    with TestClient(app) as client:
+        created = client.post("/api/interview/sessions", json={})
+        assert created.status_code == 201, created.text
+        assert created.json()["role_type"] == "General"
+        session_id = created.json()["id"]
+        try:
+            resp = client.post(f"/api/interview/sessions/{session_id}/greet")
+            assert resp.status_code == 200, resp.text
+            assert "What role are you applying for" in resp.json()["text"]
+            client.delete(resp.json()["audio_url"])
+        finally:
+            _cleanup(uuid.UUID(session_id))
+
+
+def test_patch_role():
+    with TestClient(app) as client:
+        created = client.post("/api/interview/sessions", json={})
+        session_id = created.json()["id"]
+        try:
+            patched = client.patch(
+                f"/api/interview/sessions/{session_id}",
+                json={"role_type": "DevOps Engineer"},
+            )
+            assert patched.status_code == 200, patched.text
+            assert patched.json()["role_type"] == "DevOps Engineer"
+
+            missing = client.patch(
+                f"/api/interview/sessions/{uuid.uuid4()}",
+                json={"role_type": "DevOps Engineer"},
+            )
+            assert missing.status_code == 404
+
+            empty = client.patch(
+                f"/api/interview/sessions/{session_id}", json={"role_type": ""}
+            )
+            assert empty.status_code == 422
+        finally:
+            _cleanup(uuid.UUID(session_id))
+
+
+def test_role_extraction_from_first_answer():
+    from app.api.routes import interviews as interview_routes
+    from app.services.llm_service import LLMService
+
+    svc = LLMService()
+    captured = {}
+
+    async def fake_generate(messages):
+        return "Data Scientist"
+
+    async def fake_stream(messages):
+        captured["messages"] = messages
+        yield "Noted."
+
+    svc.generate_response = fake_generate  # type: ignore[method-assign]
+    svc.stream_response = fake_stream  # type: ignore[method-assign]
+    app.dependency_overrides[interview_routes.get_llm_service] = lambda: svc
+    try:
+        with TestClient(app) as client:
+            created = client.post("/api/interview/sessions", json={})
+            session_id = created.json()["id"]
+            try:
+                resp = client.post(
+                    "/api/interview/chat/stream",
+                    json={
+                        "messages": [
+                            {"role": "user", "content": "I want to be a data scientist"}
+                        ],
+                        "interview_id": session_id,
+                    },
+                )
+                assert resp.status_code == 200, resp.text
+                system = captured["messages"][0]
+                assert system["role"] == "system"
+                assert "Data Scientist" in system["content"]
+                got = client.get(f"/api/interview/sessions/{session_id}")
+                assert got.json()["role_type"] == "Data Scientist"
+            finally:
+                _cleanup(uuid.UUID(session_id))
+    finally:
+        app.dependency_overrides.clear()

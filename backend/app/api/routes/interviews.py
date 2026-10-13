@@ -20,12 +20,13 @@ from app.schemas.interview import (
     InterviewChatRequest,
     InterviewCreate,
     InterviewResponse,
+    SessionRoleUpdate,
     TranscriptionResponse,
     SpeechSynthesizeRequest,
     SpeechSynthesizeResponse
 )
 from app.schemas.message import MessageCreate, MessageResponse
-from app.services.interview_service import InterviewService
+from app.services.interview_service import DEFAULT_ROLE, InterviewService
 from app.services.llm_service import LLMService
 from app.services.stt_service import STTService
 from app.services.tts_service import TTSService
@@ -93,6 +94,14 @@ async def chat_stream(
         session = service.get_session(request.interview_id)
         if session is None:
             raise HTTPException(status_code=404, detail="Interview session not found")
+        # First answer in a role-less session names the target: extract it so
+        # the rest of the interview (and the greeting follow-up) is grounded.
+        if session.role_type == DEFAULT_ROLE:
+            first_answers = [m for m in request.messages if m.role == "user"]
+            if first_answers:
+                extracted = await llm_service.extract_role(first_answers[-1].content)
+                if extracted:
+                    session = service.set_role(session.id, extracted)
     if not formatted_messages or formatted_messages[0].get("role") != "system":
         role = session.role_type if session is not None else "Software Engineer"
         formatted_messages.insert(
@@ -337,6 +346,19 @@ async def complete_interview_session(
     return session
 
 
+@router.patch("/sessions/{interview_id}", response_model=InterviewResponse)
+async def update_interview_role(
+    interview_id: uuid.UUID,
+    body: SessionRoleUpdate,
+    service: InterviewService = Depends(get_interview_service),
+):
+    """Sets/overrides the target role for a session."""
+    session = service.set_role(interview_id, body.role_type)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+    return session
+
+
 @router.post("/sessions/{interview_id}/greet", response_model=GreetResponse)
 async def greet_candidate(
     interview_id: uuid.UUID,
@@ -350,10 +372,16 @@ async def greet_candidate(
     if session.status != "in_progress":
         raise HTTPException(status_code=400, detail="Session is not in progress")
 
-    text = (
-        f"Hello! I'm your AI interviewer. I see you're here for the "
-        f"{session.role_type} role. Are you ready to begin?"
-    )
+    if session.role_type == DEFAULT_ROLE:
+        text = (
+            "Hello! I'm your AI interviewer. "
+            "What role are you applying for today?"
+        )
+    else:
+        text = (
+            f"Hello! I'm your AI interviewer. I see you're here for the "
+            f"{session.role_type} role. Are you ready to begin?"
+        )
     service.add_message(interview_id=interview_id, sender="interviewer", transcript=text)
     try:
         generated_path = await asyncio.to_thread(

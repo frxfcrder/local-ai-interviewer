@@ -31,6 +31,29 @@ class LLMService:
                 # Log the error properly in a production app
                 raise RuntimeError(f"Failed to communicate with local Ollama instance: {e}")
 
+    async def extract_role(self, text: str) -> str | None:
+        """
+        Boils a free-speech answer ("uh, backend stuff I guess") down to a
+        job title. Returns None when nothing title-like is found.
+        """
+        raw = await self.generate_response(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Extract the job title the candidate is applying for. "
+                        "Reply with ONLY the title (e.g. 'Senior Backend Engineer'). "
+                        "If no clear title is stated, reply with exactly: NONE"
+                    ),
+                },
+                {"role": "user", "content": text},
+            ]
+        )
+        cleaned = raw.strip().strip("\"'").splitlines()[0].strip() if raw.strip() else ""
+        if not cleaned or cleaned.upper() == "NONE" or len(cleaned) > 60:
+            return None
+        return cleaned
+
     async def stream_response(self, messages: List[Dict[str, str]]) -> AsyncGenerator[str, None]:
         """
         Streams chat tokens asynchronously from Ollama for real-time frontend feedback.

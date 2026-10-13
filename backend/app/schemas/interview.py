@@ -6,7 +6,10 @@ import uuid
 # --- Interview Session Schemas ---
 class InterviewCreate(BaseModel):
     user_id: Optional[uuid.UUID] = Field(default_factory=uuid.uuid4, description="Owning user ID (generated when omitted)")
-    role_type: str = Field(..., description="Target role, e.g. 'Senior Backend Engineer'")
+    role_type: str = Field("General", description="Target role, e.g. 'Senior Backend Engineer'")
+
+class SessionRoleUpdate(BaseModel):
+    role_type: str = Field(..., min_length=1, max_length=100, description="New target role")
 
 class InterviewResponse(BaseModel):
     id: uuid.UUID

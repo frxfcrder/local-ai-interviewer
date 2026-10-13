@@ -17,11 +17,14 @@ export function getHealth(): Promise<HealthStatus> {
   return fetch('/health').then(json<HealthStatus>);
 }
 
-export function createSession(roleType: string, userId?: string): Promise<InterviewSession> {
+export function createSession(roleType?: string, userId?: string): Promise<InterviewSession> {
   return fetch('/api/interview/sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ role_type: roleType, ...(userId ? { user_id: userId } : {}) }),
+    body: JSON.stringify({
+      ...(roleType ? { role_type: roleType } : {}),
+      ...(userId ? { user_id: userId } : {}),
+    }),
   }).then(json<InterviewSession>);
 }
 
