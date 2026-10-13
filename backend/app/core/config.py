@@ -33,6 +33,7 @@ class Config:
 
     # Audio services
     TTS_ENGINE = "pyttsx3"
+    TTS_VOICE = os.getenv("TTS_VOICE", "Zira")
     STT_MODEL = None  # Can be overridden in stt_service
 
     # Auth / JWT

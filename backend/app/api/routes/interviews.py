@@ -12,9 +12,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Config
 from app.db.session import get_db
+from app.prompts.interviewer import get_interviewer_prompt
 from app.schemas.interview import (
     ChatMessage,
     EvaluateRequest,
+    GreetResponse,
     InterviewChatRequest,
     InterviewCreate,
     InterviewResponse,
@@ -50,7 +52,7 @@ def get_stt_service() -> STTService:
 
 @lru_cache(maxsize=1)
 def get_tts_service() -> TTSService:
-    return TTSService(output_dir=AUDIO_DIR)
+    return TTSService(output_dir=AUDIO_DIR, voice=Config.TTS_VOICE)
 
 def get_eval_service() -> EvaluationService:
     return EvaluationService(llm_service=get_llm_service())
@@ -83,6 +85,19 @@ async def chat_stream(
     assistant reply are persisted to that session.
     """
     formatted_messages = [msg.model_dump() for msg in request.messages]
+    # Ground the model: role-aware system prompt + brevity rules. The routes
+    # previously sent raw history with no system message, so replies drifted
+    # and ballooned (452 → 2350 chars observed). Skip if caller set its own.
+    session = None
+    if request.interview_id is not None:
+        session = service.get_session(request.interview_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Interview session not found")
+    if not formatted_messages or formatted_messages[0].get("role") != "system":
+        role = session.role_type if session is not None else "Software Engineer"
+        formatted_messages.insert(
+            0, {"role": "system", "content": get_interviewer_prompt(role)}
+        )
 
     if request.interview_id is None:
         async def _anonymous_stream():
@@ -91,9 +106,6 @@ async def chat_stream(
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(_anonymous_stream(), media_type="text/event-stream")
-
-    if service.get_session(request.interview_id) is None:
-        raise HTTPException(status_code=404, detail="Interview session not found")
 
     user_turns = [msg for msg in request.messages if msg.role == "user"]
     if user_turns:
@@ -184,11 +196,17 @@ async def synthesize_speech(
     Synthesizes textual output into a local wav audio file using pyttsx3.
     """
     try:
-        # Generate audio file (blocking: run off the loop; basename only)
+        # Generate audio file (blocking: run off the loop; basename only).
+        # Unique name per turn unless the client asked for a specific file —
+        # otherwise every reply would overwrite a single wav.
+        if request.output_filename:
+            target_name = os.path.basename(request.output_filename)
+        else:
+            target_name = f"interviewer_{uuid.uuid4().hex}.wav"
         generated_path = await asyncio.to_thread(
             tts_service.synthesize_to_file,
             request.text,
-            os.path.basename(request.output_filename or "interviewer_response.wav"),
+            target_name,
         )
 
         # Relative stream URL
@@ -317,3 +335,36 @@ async def complete_interview_session(
     if session is None:
         raise HTTPException(status_code=404, detail="Interview session not found")
     return session
+
+
+@router.post("/sessions/{interview_id}/greet", response_model=GreetResponse)
+async def greet_candidate(
+    interview_id: uuid.UUID,
+    service: InterviewService = Depends(get_interview_service),
+    tts_service: TTSService = Depends(get_tts_service),
+):
+    """Interviewer opens the session: greeting persisted + synthesized in one call."""
+    session = service.get_session(interview_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+    if session.status != "in_progress":
+        raise HTTPException(status_code=400, detail="Session is not in progress")
+
+    text = (
+        f"Hello! I'm your AI interviewer. I see you're here for the "
+        f"{session.role_type} role. Are you ready to begin?"
+    )
+    service.add_message(interview_id=interview_id, sender="interviewer", transcript=text)
+    try:
+        generated_path = await asyncio.to_thread(
+            tts_service.synthesize_to_file,
+            text,
+            f"greeting_{uuid.uuid4().hex}.wav",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Speech synthesis failed: {str(e)}",
+        )
+    filename = os.path.basename(generated_path)
+    return GreetResponse(text=text, audio_url=f"/api/interview/audio/{filename}")

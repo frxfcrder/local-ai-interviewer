@@ -58,6 +58,7 @@ def test_session_endpoints_registered():
     assert "/api/interview/sessions/{interview_id}/history" in paths
     assert "/api/interview/sessions/{interview_id}/messages" in paths
     assert "/api/interview/sessions/{interview_id}/complete" in paths
+    assert "/api/interview/sessions/{interview_id}/greet" in paths
 
 
 def test_session_endpoints_live():
@@ -96,5 +97,38 @@ def test_session_endpoints_live():
             done = client.post(f"/api/interview/sessions/{session_id}/complete")
             assert done.status_code == 200
             assert done.json()["status"] == "completed"
+        finally:
+            _cleanup(uuid.UUID(session_id))
+
+
+def test_greet_persists_and_returns_audio():
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/interview/sessions", json={"role_type": "Greeter Test"}
+        )
+        assert created.status_code == 201, created.text
+        session_id = created.json()["id"]
+        try:
+            resp = client.post(f"/api/interview/sessions/{session_id}/greet")
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+            assert "Greeter Test" in body["text"]
+            assert body["audio_url"].startswith("/api/interview/audio/greeting_")
+
+            audio = client.get(body["audio_url"])
+            assert audio.status_code == 200
+            assert len(audio.content) > 1000
+
+            history = client.get(f"/api/interview/sessions/{session_id}/history")
+            assert history.status_code == 200
+            turns = [(m["sender"], m["transcript"]) for m in history.json()]
+            assert turns == [("interviewer", body["text"])]
+
+            missing = client.post(f"/api/interview/sessions/{uuid.uuid4()}/greet")
+            assert missing.status_code == 404
+
+            client.delete(body["audio_url"])
         finally:
             _cleanup(uuid.UUID(session_id))

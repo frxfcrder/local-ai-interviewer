@@ -2,6 +2,7 @@ from .evaluation import EvaluationResponse
 from .interview import (
     ChatMessage,
     EvaluateRequest,
+    GreetResponse,
     InterviewChatRequest,
     InterviewCreate,
     InterviewResponse,
@@ -15,6 +16,7 @@ __all__ = [
     "ChatMessage",
     "EvaluateRequest",
     "EvaluationResponse",
+    "GreetResponse",
     "InterviewChatRequest",
     "InterviewCreate",
     "InterviewResponse",

@@ -36,10 +36,15 @@ class TranscriptionResponse(BaseModel):
 # --- TTS Schemas ---
 class SpeechSynthesizeRequest(BaseModel):
     text: str = Field(..., description="Text content to synthesize into speech")
-    output_filename: Optional[str] = Field("interviewer_response.wav", description="Target audio file name")
+    output_filename: Optional[str] = Field(None, description="Target audio file name (generated when omitted)")
 
 class SpeechSynthesizeResponse(BaseModel):
     audio_url: str = Field(..., description="Relative path or URL to access the generated audio file")
+
+# --- Greeting Schemas ---
+class GreetResponse(BaseModel):
+    text: str = Field(..., description="Greeting spoken by the interviewer")
+    audio_url: str = Field(..., description="Relative path or URL to access the greeting audio")
 
 # --- Evaluation Schemas ---
 class EvaluateRequest(BaseModel):

@@ -16,7 +16,9 @@ class LLMService:
         payload = {
             "model": self.model_name,
             "messages": messages,
-            "stream": False
+            "stream": False,
+            # Voice-first: short spoken replies, never essays.
+            "options": {"num_predict": 200},
         }
 
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -37,7 +39,9 @@ class LLMService:
         payload = {
             "model": self.model_name,
             "messages": messages,
-            "stream": True
+            "stream": True,
+            # Voice-first: short spoken replies, never essays.
+            "options": {"num_predict": 200},
         }
 
         async with httpx.AsyncClient(timeout=120.0) as client:
